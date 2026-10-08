@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package chitchat;
+
+//the ;chitchat part renames the Go package to chitchat instead of grpc which
+//would clash with the real package.
+
+option go_package = "github.com/augustersej123/ChitChat/grpc;chitchat";
+
+service ChitChat {
+  // Bidirectional streaming: the client sends join/publish/leave events,
+  // the server sends broadcasts back on the same stream
+  rpc Chat(stream ClientEvent) returns (stream ChatMessage);
+}
+
+message ClientEvent {
+  int64 timestamp = 1;
+  oneof event {
+    Join join = 2;
+    Publish publish = 3;
+    Leave leave = 4;
+  }
+}
+
+message Join {
+  string participant = 1;
+}
+message Publish {
+  string content = 1;
+}
+message Leave {}
+
+message ChatMessage {
+  string sender = 1;
+  string content = 2;
+  int64 timestamp = 3;
+}
