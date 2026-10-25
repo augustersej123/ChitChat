@@ -26,32 +26,50 @@ func main() {
 	//os.O_Append makes every write go to the end of the document, so new content doesnt overwrite from the top
 	if err != nil {
 		log.Fatalf("could not open the log file:%v", err)
+		os.Exit(1)
 	}
 
 	defer f.Close()
+
 	log.SetOutput(f)
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds) //Timestamp format to microseconds
+	log.SetPrefix("[Client " + name + "] ")
 
 	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("[Client] failed to connect: %v", err)
+		log.Fatalf(" failed to connect: %v", err)
+		fmt.Printf("could not connect: %v\n", err)
+		return
 	}
 	defer conn.Close()
 
 	client := pb.NewChitChatClient(conn)
-	log.Println("New Client has connected to the server. Client name:", name)
+	log.Printf("event=connect client=%s", name)
 
 	stream, err := client.Chat(context.Background())
 	if err != nil {
-		log.Fatalf("[Client] failed to open the chat stream: %v", err)
+		log.Fatalf(" failed to open the chat stream: %v", err)
+		fmt.Printf("could not open the chat stream: %v\n", err)
+		return
 	}
 
 	clock := &LogicalClock{}
+	done := make(chan struct{})
+	go receive(stream, clock, done) // Start receiving messages in a separate goroutine
+
 	if err := sendJoin(stream, clock, name); err != nil {
 		log.Fatalf("[Client] failed to join %v", err)
+		fmt.Printf("failed to join: %v\n", err)
+		return
 	}
 
 	fmt.Printf("Joined as %s. Type a message, or /leave to quit.\n", name)
-	go receive(stream, clock)
+
 	readInput(stream, clock)
+
+	stream.CloseSend()
+	<-done
+
+	log.Printf("event=disconnect client=%s", name)
+	fmt.Println("Left Chit Chat.")
 }

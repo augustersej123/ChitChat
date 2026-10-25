@@ -25,9 +25,12 @@ func (s *server) Chat(stream pb.ChitChat_ChatServer) error {
 	if join == nil {
 		return fmt.Errorf("First event must be a join")
 	}
+	// Reject empty participant names
+	if join.Participant == "" {
+		return fmt.Errorf("participant name must not be empty")
+	}
 
 	p := newParticipant(join.Participant)
-	s.broadcaster.Send(Event{Type: EventJoin, Participant: p, ClientTime: first.Timestamp})
 
 	//Sender goroutine: forwards broadcasts to this client
 	//It stops when the broadcaster closes p.Out on leave
@@ -40,6 +43,11 @@ func (s *server) Chat(stream pb.ChitChat_ChatServer) error {
 		}
 	}() //() calls the function. go runs it as a goroutine
 
+	log.Printf("[Server] event=client-connect client=%s", p.ID)
+	defer log.Printf("[Server] event=client-disconnect client=%s", p.ID)
+
+	s.broadcaster.Send(Event{Type: EventJoin, Participant: p, ClientTime: first.Timestamp})
+
 	//Receive loop: handles the events from this client
 	for {
 		ev, err := stream.Recv()
@@ -51,6 +59,11 @@ func (s *server) Chat(stream pb.ChitChat_ChatServer) error {
 
 		switch e := ev.Event.(type) {
 		case *pb.ClientEvent_Publish:
+
+			if !utf8.ValidString(e.Publish.Content) {
+				log.Printf("[Server] event=reject-publish client=%s reason=invalid-utf8", p.ID)
+				continue
+			}
 			if utf8.RuneCountInString(e.Publish.Content) > 128 {
 				log.Printf("[Server] event=reject-publish client=%s reason=too-long", p.ID)
 				continue
